@@ -8779,93 +8779,55 @@ IDE_Morph.prototype.userCustomizePalette = function (callback = nop) {
 // IDE_Morph cloud interface
 
 IDE_Morph.prototype.initializeCloud = function () {
-    var world = this.world();
-    new DialogBoxMorph(
-        null,
-        user => this.cloud.login(
-            user.username.toLowerCase(),
-            user.password,
-            user.choice,
-            (username, role, response) => {
-                sessionStorage.username = username;
-                this.controlBar.cloudButton.refresh();
-                this.source = 'cloud';
-                if (!isNil(response.days_left)) {
-                    var duration = response.days_left + ' day' +
-                        (response.days_left > 1 ? 's' : '');
-                    new DialogBoxMorph().inform(
-                        'Unverified account: ' + duration + ' left' +
-                        'You are now logged in, and your account\n' +
-                        'is enabled for ' + duration + '.\n' +
-                        'Please use the verification link that\n' +
-                        'was sent to your email address when you\n' +
-                        'signed up.\n\n' +
-                        'If you cannot find that email, please\n' +
-                        'check your spam folder. If you still\n' +
-                        'cannot find it, please use the "Resend\n' +
-                        'Verification Email..." option in the cloud\n' +
-                        'menu.\n\n' +
-                        'You have ' + duration + ' left.',
-                        world,
-                        this.cloudIcon(null, new Color(0, 180, 0))
-                    );
-                } else if (response.title) {
-                    new DialogBoxMorph().inform(
-                        response.title,
-                        response.message,
-                        world,
-                        this.cloudIcon(null, new Color(0, 180, 0))
-                    );
-                } else {
-                    this.showMessage(response.message, 2);
-                }
-            },
-            this.cloudError()
-        )
-    ).withKey('cloudlogin').promptCredentials(
-        'Sign in',
-        'login',
-        null,
-        null,
-        null,
-        null,
-        'stay signed in on this computer\nuntil logging out',
-        world,
-        this.cloudIcon(),
-        this.cloudMsg
-    );
+    this.openCloudAuthDialog('/embed/login', 'Sign in', new Point(520, 340));
 };
 
 IDE_Morph.prototype.createCloudAccount = function () {
-    var world = this.world();
+    this.openCloudAuthDialog('/embed/sign_up', 'Sign up', new Point(520, 640));
+};
 
-    new DialogBoxMorph(
-        null,
-        user => this.cloud.signup(
-            user.username,
-            user.password,
-            user.passwordRepeat,
-            user.email,
-            (txt, title) => new DialogBoxMorph().inform(
-                title,
-                txt + '.\n\nYou can now log in.',
-                world,
-                this.cloudIcon(null, new Color(0, 180, 0))
-            ),
-            this.cloudError()
-        )
-    ).withKey('cloudsignup').promptCredentials(
-        'Sign up',
-        'signup',
-        'https://snap.berkeley.edu/tos.html',
-        'Terms of Service...',
-        'https://snap.berkeley.edu/privacy.html',
-        'Privacy...',
-        'I have read and agree\nto the Terms of Service',
-        world,
-        this.cloudIcon(),
-        this.cloudMsg
+IDE_Morph.prototype.openCloudAuthDialog = function (path, title, extent) {
+    // Embed the Snap!Cloud HTML login/signup views as an iframe dialog
+    // rather than rendering the form in Morphic. This keeps the visual
+    // and textual experience in sync with the rest of snap.berkeley.edu
+    // without requiring a popup window.
+    var world = this.world(),
+        base = this.cloud.url.replace(/\/api\/v1\/?$/, ''),
+        origin = new URL(base).origin,
+        url = base + path,
+        dialog;
+
+    dialog = new IframeDialogMorph(
+        url,
+        origin,
+        data => {
+            if (data.event === 'login') {
+                dialog.destroy();
+                this.cloud.checkCredentials(
+                    username => {
+                        sessionStorage.username = username;
+                        this.controlBar.cloudButton.refresh();
+                        this.source = 'cloud';
+                        this.showMessage('signed in as ' + username, 2);
+                    },
+                    this.cloudError()
+                );
+            } else if (data.event === 'signup') {
+                dialog.destroy();
+                new DialogBoxMorph().inform(
+                    'Account Created',
+                    'Please check your email for a\n' +
+                        'verification link, then log in.',
+                    world,
+                    this.cloudIcon(null, new Color(0, 180, 0))
+                );
+            } else if (data.event === 'close') {
+                dialog.destroy();
+            }
+        }
     );
+    dialog.buildContents(title, extent);
+    dialog.withKey('cloud' + path).popUp(world);
 };
 
 IDE_Morph.prototype.resetCloudPassword = function () {

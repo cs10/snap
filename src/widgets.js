@@ -45,6 +45,7 @@
     Morph*
         AlignmentMorph
         DialogBoxMorph
+            IframeDialogMorph
         InputFieldMorph
     TriggerMorph*
         MenuItemMorph*
@@ -71,6 +72,7 @@
     ToggleMorph
     ToggleElementMorph
     DialogBoxMorph
+    IframeDialogMorph
     AlignmentMorph
     InputFieldMorph
     PianoMenuMorph
@@ -96,6 +98,7 @@ var TabMorph;
 var ToggleMorph;
 var ToggleElementMorph;
 var DialogBoxMorph;
+var IframeDialogMorph;
 var AlignmentMorph;
 var InputFieldMorph;
 var PianoMenuMorph;
@@ -3103,6 +3106,117 @@ DialogBoxMorph.prototype.outlinePathBody = function (ctx, radius) {
         this.height() - th,
         [0, 0, radius, radius]
     );
+};
+
+// IframeDialogMorph /////////////////////////////////////////////////////
+
+// I am a DialogBoxMorph whose body is an HTML <iframe> overlaid on the
+// Snap! world canvas. I let Snap! embed remote HTML pages (e.g. the
+// Snap!Cloud login/signup views) as native-feeling modals without
+// resorting to popup windows. Messages from the embedded page reach
+// Snap! via window.postMessage; the host specifies an allowed origin
+// so only that origin's messages are trusted.
+
+// IframeDialogMorph inherits from DialogBoxMorph:
+
+IframeDialogMorph.prototype = new DialogBoxMorph();
+IframeDialogMorph.prototype.constructor = IframeDialogMorph;
+IframeDialogMorph.uber = DialogBoxMorph.prototype;
+
+function IframeDialogMorph(url, allowedOrigin, onMessage) {
+    this.init(url, allowedOrigin, onMessage);
+}
+
+IframeDialogMorph.prototype.init = function (url, allowedOrigin, onMessage) {
+    IframeDialogMorph.uber.init.call(this);
+    this.url = url;
+    this.allowedOrigin = allowedOrigin || null;
+    this.onMessage = onMessage || null;
+    this.iframeElement = null;
+    this.messageHandler = null;
+    // Drive step() once per frame so the iframe follows the dialog when
+    // the user drags it, the window resizes, or the page scrolls.
+    this.fps = 30;
+};
+
+IframeDialogMorph.prototype.buildContents = function (
+    title,
+    iframeExtent
+) {
+    var placeholder = new Morph(),
+        ext = iframeExtent || new Point(560, 520);
+    placeholder.setExtent(ext);
+    placeholder.alpha = 0; // invisible; the iframe overlays it in the DOM
+    this.labelString = title;
+    this.createLabel();
+    this.addBody(placeholder);
+    this.addButton('cancel', 'Close');
+    this.fixLayout();
+};
+
+IframeDialogMorph.prototype.popUp = function (world) {
+    IframeDialogMorph.uber.popUp.call(this, world);
+    this.createIframe();
+    this.syncIframeBounds();
+};
+
+IframeDialogMorph.prototype.createIframe = function () {
+    var iframe = document.createElement('iframe');
+    iframe.src = this.url;
+    iframe.setAttribute('title', this.labelString || 'Snap!Cloud');
+    iframe.style.position = 'absolute';
+    iframe.style.border = 'none';
+    iframe.style.background = '#ffffff';
+    // Sit above the world canvas and any Morphic-drawn chrome, but below
+    // native browser UI. We intentionally don't push arbitrarily high.
+    iframe.style.zIndex = 500;
+    document.body.appendChild(iframe);
+    this.iframeElement = iframe;
+
+    this.messageHandler = event => {
+        if (this.allowedOrigin && event.origin !== this.allowedOrigin) {
+            return;
+        }
+        var data = event.data;
+        if (!data || data.type !== 'snapcloud:auth') { return; }
+        if (this.onMessage) { this.onMessage(data, event); }
+    };
+    window.addEventListener('message', this.messageHandler);
+};
+
+IframeDialogMorph.prototype.syncIframeBounds = function () {
+    if (!this.iframeElement || !this.body) { return; }
+    var world = this.world();
+    if (!world) { return; }
+    var canvasPos = getDocumentPositionOf(world.worldCanvas),
+        b = this.body.bounds,
+        left = Math.ceil(b.origin.x + canvasPos.x) + 'px',
+        top = Math.ceil(b.origin.y + canvasPos.y) + 'px',
+        width = Math.ceil(b.width()) + 'px',
+        height = Math.ceil(b.height()) + 'px',
+        st = this.iframeElement.style;
+    // Only write when changed — cheap guard against forcing layout every
+    // frame while the dialog is stationary.
+    if (st.left !== left) { st.left = left; }
+    if (st.top !== top) { st.top = top; }
+    if (st.width !== width) { st.width = width; }
+    if (st.height !== height) { st.height = height; }
+};
+
+IframeDialogMorph.prototype.step = function () {
+    this.syncIframeBounds();
+};
+
+IframeDialogMorph.prototype.destroy = function () {
+    if (this.iframeElement) {
+        this.iframeElement.remove();
+        this.iframeElement = null;
+    }
+    if (this.messageHandler) {
+        window.removeEventListener('message', this.messageHandler);
+        this.messageHandler = null;
+    }
+    IframeDialogMorph.uber.destroy.call(this);
 };
 
 // AlignmentMorph /////////////////////////////////////////////////////

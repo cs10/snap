@@ -2,3 +2,6 @@
 *.swp
 .tern-port
 /src/.vscode
+
+# Pre-compressed assets produced by utilities/compress.sh
+*.gz
